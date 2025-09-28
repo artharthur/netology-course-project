@@ -57,6 +57,7 @@ Prometheus :9090, Grafana :3000
 ```bash
 curl -s http://84.201.151.117/ | head -5
 for i in {1..6}; do curl -s http://84.201.151.117/ | grep '^<h1>'; done
+```
 # видно чередование: WEB: cp-web-a / WEB: cp-web-d
 
 
@@ -87,17 +88,17 @@ sg-bastion (sg-mon) (на cp-mon)
 	•	prometheus-nginxlog-exporter слушает :4040, читает /var/log/nginx/access.log
 
 Проверка с cp-mon:
-
+```
 curl -s 10.128.0.33:9100/metrics | head -3
 curl -s 10.130.0.8:9100/metrics  | head -3
 
 curl -s 10.128.0.33:4040/metrics | head -10
 curl -s 10.130.0.8:4040/metrics  | head -10
-
+```
 Prometheus
 
 Фрагмент prometheus/prometheus.yml:
-
+```
 scrape_configs:
   - job_name: 'node'
     static_configs:
@@ -110,14 +111,14 @@ scrape_configs:
   - job_name: 'prometheus'
     static_configs:
       - targets: ['localhost:9090']
-
+```
 Проверка на cp-mon:
-
+```
 systemctl status prometheus --no-pager | sed -n '1,12p'
 curl -s http://localhost:9090/-/ready
 curl -s http://localhost:9090/api/v1/targets \
   | jq '.data.activeTargets[] | {scrapePool, scrapeUrl, health}' | head
-
+```
 Grafana
 	•	Data source: Prometheus (http://localhost:9090) — OK.
 	•	Дашборд Web Monitoring (ключевые панели):
@@ -127,10 +128,10 @@ Grafana
 	•	HTTP Response Size (B/s) — sum by(instance)(rate(nginx_http_response_size_bytes[1m])).
 
 Проверка на cp-mon:
-
+```
 systemctl status grafana-server --no-pager | sed -n '1,12p'
 curl -s http://localhost:3000/api/health | jq .
-
+```
 
 ⸻
 
@@ -163,7 +164,7 @@ curl -s http://localhost:3000/api/health | jq .
 	•	Доступ к Kibana открыт только с доверенного IP (SG). К ES (9200/tcp) разрешено только из sg-web.
 
 Конфигурация Filebeat (cp-web-a)
-
+```
 filebeat.inputs:
   - type: filestream
     id: nginx_access
@@ -180,7 +181,7 @@ output.elasticsearch:
     - index: "nginx-logs-%{+yyyy.MM.dd}"
 
 setup.ilm.enabled: false
-
+```
 
 ⸻
 
