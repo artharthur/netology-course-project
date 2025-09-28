@@ -1,4 +1,4 @@
-# HA-сайт в Yandex Cloud: ALB + 2 веб-ВМ (2 AZ) + мониторинг (Prometheus/Grafana)
+# Сайт в Yandex Cloud: ALB + 2 веб-ВМ (2 AZ) + мониторинг (Prometheus/Grafana)
 
 ## Краткое резюме
 - **2 веб-ВМ** в разных зонах: одинаковый nginx + статика.
@@ -185,6 +185,46 @@ setup.ilm.enabled: false
 
 ⸻
 
+### Проверки (CLI)
+
+#### Elasticsearch (cp-mon)
+```bash
+# кластера и состояние
+curl -s http://10.128.0.27:9200/_cluster/health?pretty
+```
+# индексы (должен быть nginx-logs-YYYY.MM.DD)
+```
+curl -s 'http://10.128.0.27:9200/_cat/indices?v'
+```
+# есть ли события за последние 10 мин
+```
+curl -s 'http://10.128.0.27:9200/nginx-logs-*/_count?q=@timestamp:>now-10m' | jq .
+```
+# последние документы (проверка полей)
+```
+curl -s 'http://10.128.0.27:9200/nginx-logs-*/_search?size=3&sort=@timestamp:desc' | jq '._source | {instance, message, "@timestamp"}'
+```
+Kibana (cp-mon / с доверенного IP)
+
+# API-проверка статуса Kibana
+```
+curl -s -H 'kbn-xsrf: true' http://<PUBLIC_IP_cp-mon>:5601/api/status | jq .status.overall.state
+```
+# UI: Analytics → Discover → Data view = nginx-logs → видны записи за "Last 15 minutes".
+
+Filebeat (cp-web-a)
+
+# контейнер работает и подключён к ES
+```
+sudo docker ps --filter name=filebeat --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
+sudo docker logs -f filebeat --tail 100 | egrep -i 'Connecting to backoff|established|harvester|access.log'
+```
+Filebeat (cp-web-d)
+```
+sudo docker ps --filter name=filebeat --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
+sudo docker logs -f filebeat --tail 100 | egrep -i 'Connecting to backoff|established|harvester|access.log'
+```
+
 ## Скриншоты (галерея)
 
 ### ALB
@@ -237,4 +277,11 @@ setup.ilm.enabled: false
 <p float="left">
   <img src="./screenshots/19a-filebeat-web-a-ok.png" width="420" alt="19a Filebeat web-a OK">
   <img src="./screenshots/19b-filebeat-web-d-ok.png" width="420" alt="19b Filebeat web-d OK">
+</p>
+
+### Snapshots (расписание и проверка)
+
+<p float="left">
+  <img src="./screenshots/20-snapshots-policy.png" width="420" alt="20 snapshots policy (cp-daily-7d)">
+  <img src="./screenshots/21-snapshots-list.png"  width="420" alt="21 snapshots list (готовые снимки)">
 </p>
