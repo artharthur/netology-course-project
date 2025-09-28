@@ -282,6 +282,26 @@ sudo docker logs -f filebeat --tail 100 | egrep -i 'Connecting to backoff|establ
 ### Snapshots (расписание и проверка)
 
 <p float="left">
-  <img src="./screenshots/20-snapshots-policy.png" width="420" alt="20 snapshots policy (cp-daily-7d)">
+  <img src="./screenshots/20-snapshots-schedule.png" width="420" alt="20 snapshots policy (cp-daily-7d)">
   <img src="./screenshots/21-snapshots-list.png"  width="420" alt="21 snapshots list (готовые снимки)">
 </p>
+
+## Развёртывание из кода (Terraform + Ansible)
+
+### Предварительно
+- Terraform ≥ 1.6, Ansible ≥ 2.14.
+- Авторизация в Yandex Cloud (CLI `yc init` **или** экспорт переменных окружения для провайдера).
+- Файл `infra/terraform/variables.auto.tfvars` создан из `.example` и заполнен.
+
+### Шаги
+```bash
+cd infra/terraform
+terraform init
+terraform apply
+terraform output -raw ansible_inventory > ../ansible/inventory/hosts.ini
+```
+```
+cd ../ansible
+ansible -m ping all
+ansible-playbook site.yml
+```
