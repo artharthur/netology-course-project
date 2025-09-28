@@ -58,7 +58,7 @@ Prometheus :9090, Grafana :3000
 curl -s http://84.201.151.117/ | head -5
 for i in {1..6}; do curl -s http://84.201.151.117/ | grep '^<h1>'; done
 ```
-# видно чередование: WEB: cp-web-a / WEB: cp-web-d
+чередование: WEB: cp-web-a / WEB: cp-web-d
 
 
 ⸻
