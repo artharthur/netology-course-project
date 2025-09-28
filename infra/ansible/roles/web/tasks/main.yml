@@ -1,0 +1,82 @@
+- name: Install nginx
+  apt: name=nginx state=present
+
+- name: Simple index.html
+  copy:
+    dest: /var/www/html/index.html
+    content: |
+      <h1>WEB: {{ ansible_hostname }}</h1>
+      <p>{{ ansible_default_ipv4.address }}</p>
+
+- name: Enable & start nginx
+  service: name=nginx state=started enabled=yes
+
+# node_exporter
+- name: Download node_exporter
+  get_url:
+    url: https://github.com/prometheus/node_exporter/releases/download/v1.8.2/node_exporter-1.8.2.linux-amd64.tar.gz
+    dest: /tmp/node_exporter.tgz
+- unarchive: src=/tmp/node_exporter.tgz dest=/usr/local/ copy=no
+- file: src=/usr/local/node_exporter-1.8.2.linux-amd64/node_exporter dest=/usr/local/bin/node_exporter state=link
+- copy:
+    dest: /etc/systemd/system/node_exporter.service
+    content: |
+      [Unit]
+      Description=node_exporter
+      [Service]
+      ExecStart=/usr/local/bin/node_exporter
+      [Install]
+      WantedBy=multi-user.target
+- systemd: name=node_exporter state=started enabled=yes daemon_reload=yes
+
+# nginxlog-exporter
+- name: Download nginxlog-exporter
+  get_url:
+    url: https://github.com/f1yegor/nginx-log-exporter/releases/download/v1.10.4/nginx-log-exporter_1.10.4_linux_amd64.tar.gz
+    dest: /tmp/nginxlog.tgz
+- unarchive: src=/tmp/nginxlog.tgz dest=/usr/local/ copy=no
+- file: src=/usr/local/nginx-log-exporter/nginx-log-exporter dest=/usr/local/bin/nginxlog-exporter state=link
+- copy:
+    dest: /etc/systemd/system/nginxlog-exporter.service
+    content: |
+      [Unit]
+      Description=nginxlog-exporter
+      After=nginx.service
+      [Service]
+      ExecStart=/usr/local/bin/nginxlog-exporter \
+        --listen-address=:4040 \
+        --log-format=combined \
+        --tail /var/log/nginx/access.log
+      Restart=always
+      [Install]
+      WantedBy=multi-user.target
+- systemd: name=nginxlog-exporter state=started enabled=yes daemon_reload=yes
+
+# Docker + Filebeat
+- name: Install docker
+  apt: name=docker.io state=present
+- file: path=/opt/filebeat state=directory
+- copy:
+    dest: /opt/filebeat/filebeat.yml
+    content: |
+      filebeat.inputs:
+        - type: filestream
+          id: nginx_access
+          enabled: true
+          paths: ["/var/log/nginx/access.log"]
+        - type: filestream
+          id: nginx_error
+          enabled: true
+          paths: ["/var/log/nginx/error.log"]
+      output.elasticsearch:
+        hosts: ["{{ hostvars[groups['cp_mon'][0]].es_host | default(es_host) }}:9200"]
+        indices:
+          - index: "nginx-logs-%{+yyyy.MM.dd}"
+      setup.ilm.enabled: false
+- name: Run filebeat container
+  shell: |
+    docker rm -f filebeat 2>/dev/null || true
+    docker run -d --name filebeat --restart unless-stopped \
+      -v /var/log/nginx:/var/log/nginx:ro \
+      -v /opt/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro \
+      elastic/filebeat:8.18.0

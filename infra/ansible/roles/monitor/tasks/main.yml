@@ -1,0 +1,83 @@
+# Prometheus
+- name: Create prometheus user/dirs
+  shell: |
+    id -u prometheus >/dev/null 2>&1 || useradd -r -s /bin/false prometheus
+    install -d -o prometheus -g prometheus /etc/prometheus /var/lib/prometheus
+
+- name: Download prometheus
+  get_url:
+    url: https://github.com/prometheus/prometheus/releases/download/v2.54.1/prometheus-2.54.1.linux-amd64.tar.gz
+    dest: /tmp/prom.tgz
+- unarchive: src=/tmp/prom.tgz dest=/usr/local/ copy=no
+- copy:
+    src: /usr/local/prometheus-2.54.1.linux-amd64/prometheus
+    dest: /usr/local/bin/prometheus
+    mode: "0755"
+    remote_src: true
+- copy:
+    dest: /etc/prometheus/prometheus.yml
+    content: |
+      global:
+        scrape_interval: 10s
+      scrape_configs:
+        - job_name: node
+          static_configs:
+            - targets: {{ groups['web'] | map('extract', hostvars, ['inventory_hostname']) | list | map('regex_replace', '^(.*)$', '\\1:9100') | to_nice_yaml }}
+        - job_name: nginx_logs
+          static_configs:
+            - targets: {{ groups['web'] | map('extract', hostvars, ['inventory_hostname']) | list | map('regex_replace', '^(.*)$', '\\1:4040') | to_nice_yaml }}
+        - job_name: prometheus
+          static_configs:
+            - targets: ['{{ hostvars[inventory_hostname].prom_host | default(prom_host) }}:9090']
+- copy:
+    dest: /etc/systemd/system/prometheus.service
+    content: |
+      [Unit]
+      Description=Prometheus
+      After=network.target
+      [Service]
+      ExecStart=/usr/local/bin/prometheus \
+        --config.file=/etc/prometheus/prometheus.yml \
+        --storage.tsdb.path=/var/lib/prometheus \
+        --web.listen-address={{ hostvars[inventory_hostname].prom_host | default(prom_host) }}:9090
+      [Install]
+      WantedBy=multi-user.target
+- systemd: name=prometheus state=started enabled=yes daemon_reload=yes
+
+# Grafana (репозиторий OSS)
+- name: Install grafana
+  shell: |
+    apt-get update
+    apt-get install -y apt-transport-https software-properties-common gnupg
+    mkdir -p /etc/apt/keyrings
+    wget -qO- https://packages.grafana.com/gpg.key | gpg --dearmor | tee /etc/apt/keyrings/grafana.gpg >/dev/null
+    echo "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://packages.grafana.com/oss/deb stable main" > /etc/apt/sources.list.d/grafana.list
+    apt-get update && apt-get install -y grafana
+- systemd: name=grafana-server state=started enabled=yes
+
+# Docker + Elasticsearch/Kibana (single-node, без security)
+- name: Install docker
+  apt: name=docker.io state=present
+- name: Create ES dirs
+  file: path={{ item }} state=directory mode=0755
+  loop: [/opt/es/data,/opt/es/logs]
+- name: Run Elasticsearch
+  shell: |
+    docker rm -f es 2>/dev/null || true
+    docker network create elk 2>/dev/null || true
+    docker run -d --name es --net elk --restart unless-stopped \
+      -p {{ hostvars[inventory_hostname].prom_host | default(prom_host) }}:9200:9200 \
+      -p {{ hostvars[inventory_hostname].prom_host | default(prom_host) }}:9300:9300 \
+      -e ELASTICSEARCH_ENABLE_SECURITY=no \
+      -e discovery.type=single-node \
+      -e "ES_JAVA_OPTS=-Xms1g -Xmx1g" \
+      -v /opt/es/data:/bitnami/elasticsearch/data \
+      -v /opt/es/logs:/opt/bitnami/elasticsearch/logs \
+      bitnami/elasticsearch:8
+- name: Run Kibana
+  shell: |
+    docker rm -f kibana 2>/dev/null || true
+    docker run -d --name kibana --net elk --restart unless-stopped \
+      -p {{ hostvars[inventory_hostname].prom_host | default(prom_host) }}:5601:5601 \
+      -e ELASTICSEARCH_HOSTS=http://es:9200 \
+      bitnami/kibana:8

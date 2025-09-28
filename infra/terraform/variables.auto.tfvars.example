@@ -1,0 +1,4 @@
+cloud_id   = "b1gXXXXXXXXXXXXXXX"
+folder_id  = "b1gYYYYYYYYYYYYYYY"
+ssh_pubkey = "ssh-ed25519 AAAA... your@email"
+allowed_cidrs = ["<YOUR_IP>/32"]

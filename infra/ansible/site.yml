@@ -1,0 +1,7 @@
+- hosts: web
+  become: true
+  roles: [common, web]
+
+- hosts: cp_mon
+  become: true
+  roles: [common, monitor]
